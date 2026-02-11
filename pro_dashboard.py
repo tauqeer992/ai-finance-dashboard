@@ -125,7 +125,15 @@ st.plotly_chart(fig, use_container_width=True)
 # =====================================
 # RSI
 # =====================================
+# RSI
 df["RSI"] = ta.momentum.RSIIndicator(pd.Series(close_vals)).rsi()
+
+# MACD
+macd_indicator = ta.trend.MACD(pd.Series(close_vals))
+df["MACD"] = macd_indicator.macd()
+df["MACD_SIGNAL"] = macd_indicator.macd_signal()
+df["MACD_HIST"] = macd_indicator.macd_diff()
+
 
 rsi_fig = go.Figure()
 rsi_fig.add_trace(go.Scatter(
@@ -141,6 +149,41 @@ rsi_fig.add_hline(y=30)
 rsi_fig.update_layout(template="plotly_dark", height=200)
 
 st.plotly_chart(rsi_fig, use_container_width=True)
+# =============================
+# MACD PANEL
+# =============================
+macd_fig = go.Figure()
+
+# MACD Line
+macd_fig.add_trace(go.Scatter(
+    x=df["Date"],
+    y=df["MACD"],
+    mode="lines",
+    name="MACD"
+))
+
+# Signal Line
+macd_fig.add_trace(go.Scatter(
+    x=df["Date"],
+    y=df["MACD_SIGNAL"],
+    mode="lines",
+    name="Signal"
+))
+
+# Histogram
+macd_fig.add_trace(go.Bar(
+    x=df["Date"],
+    y=df["MACD_HIST"],
+    name="Histogram"
+))
+
+macd_fig.update_layout(
+    template="plotly_dark",
+    height=250,
+    title="MACD"
+)
+
+st.plotly_chart(macd_fig, use_container_width=True)
 
 # =====================================
 # KPI METRICS

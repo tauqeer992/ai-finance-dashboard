@@ -3,22 +3,19 @@ import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
 import ta
-#import os
-#from dotenv import load_dotenv
 from openai import OpenAI
 
 # =====================================
 # CONFIG
 # =====================================
-#load_dotenv()
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+st.set_page_config(page_title="AI Personal Trading Tool", layout="wide")
 
-st.set_page_config(page_title="Pro AI Financial Analyst", layout="wide")
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # =====================================
 # SIDEBAR
 # =====================================
-st.sidebar.title("🤖 Pro AI Financial Analyst")
+st.sidebar.title("📊 AI Personal Trading Tool")
 
 symbol = st.sidebar.text_input("Asset Symbol (Use BTC-USD for crypto)", "NVDA")
 
@@ -64,26 +61,21 @@ except Exception as e:
     st.stop()
 
 if df.empty:
-    st.error("No market data available. Try a different symbol.")
+    st.error("No market data available.")
     st.stop()
 
-# Flatten MultiIndex columns
 if isinstance(df.columns, pd.MultiIndex):
     df.columns = df.columns.get_level_values(0)
 
 df = df.reset_index()
 
-# Normalize Date column (handles Date / Datetime / index)
 if "Datetime" in df.columns:
     df.rename(columns={"Datetime": "Date"}, inplace=True)
-
-if "index" in df.columns:
-    df.rename(columns={"index": "Date"}, inplace=True)
 
 df = df.dropna()
 
 # =====================================
-# NUMERIC ARRAYS (Safe Handling)
+# NUMERIC ARRAYS
 # =====================================
 open_vals = df["Open"].values
 high_vals = df["High"].values
@@ -99,7 +91,7 @@ current_price = float(close_vals[-1])
 col1, col2 = st.columns([3, 1])
 
 with col1:
-    st.title(f"📊 {symbol} Market Overview")
+    st.title(f"📈 {symbol} Market Overview")
 
 with col2:
     st.metric("Current Price", f"${current_price:,.2f}")
@@ -125,33 +117,7 @@ st.plotly_chart(fig, use_container_width=True)
 # =====================================
 # RSI
 # =====================================
-# RSI
 df["RSI"] = ta.momentum.RSIIndicator(pd.Series(close_vals)).rsi()
-
-# MACD
-macd_indicator = ta.trend.MACD(pd.Series(close_vals))
-df["MACD"] = macd_indicator.macd()
-df["MACD_SIGNAL"] = macd_indicator.macd_signal()
-df["MACD_HIST"] = macd_indicator.macd_diff()
-#====================
-# =============================
-# SIGNAL LOGIC
-# =============================
-latest_rsi = float(df["RSI"].iloc[-1])
-latest_macd = float(df["MACD"].iloc[-1])
-latest_signal = float(df["MACD_SIGNAL"].iloc[-1])
-
-signal = "HOLD"
-confidence = 50
-
-if latest_rsi < 35 and latest_macd > latest_signal:
-    signal = "BUY"
-    confidence = 75
-
-elif latest_rsi > 65 and latest_macd < latest_signal:
-    signal = "SELL"
-    confidence = 75
-#===========
 
 rsi_fig = go.Figure()
 rsi_fig.add_trace(go.Scatter(
@@ -168,12 +134,17 @@ rsi_fig.update_layout(template="plotly_dark", height=200)
 
 st.plotly_chart(rsi_fig, use_container_width=True)
 
-# =============================
-# MACD PANEL
-# =============================
+# =====================================
+# MACD
+# =====================================
+macd_indicator = ta.trend.MACD(pd.Series(close_vals))
+
+df["MACD"] = macd_indicator.macd()
+df["MACD_SIGNAL"] = macd_indicator.macd_signal()
+df["MACD_HIST"] = macd_indicator.macd_diff()
+
 macd_fig = go.Figure()
 
-# MACD Line
 macd_fig.add_trace(go.Scatter(
     x=df["Date"],
     y=df["MACD"],
@@ -181,7 +152,6 @@ macd_fig.add_trace(go.Scatter(
     name="MACD"
 ))
 
-# Signal Line
 macd_fig.add_trace(go.Scatter(
     x=df["Date"],
     y=df["MACD_SIGNAL"],
@@ -189,99 +159,77 @@ macd_fig.add_trace(go.Scatter(
     name="Signal"
 ))
 
-# Histogram
 macd_fig.add_trace(go.Bar(
     x=df["Date"],
     y=df["MACD_HIST"],
     name="Histogram"
 ))
 
-macd_fig.update_layout(
-    template="plotly_dark",
-    height=250,
-    title="MACD"
-)
+macd_fig.update_layout(template="plotly_dark", height=250)
 
 st.plotly_chart(macd_fig, use_container_width=True)
 
 # =====================================
-# KPI METRICS
+# RULE-BASED SIGNAL
 # =====================================
-k1, k2, k3 = st.columns(3)
+latest_rsi = float(df["RSI"].iloc[-1])
+latest_macd = float(df["MACD"].iloc[-1])
+latest_signal = float(df["MACD_SIGNAL"].iloc[-1])
 
-with k1:
-    st.metric("Period High", f"${float(high_vals.max()):,.2f}")
+signal = "HOLD"
+confidence = 50
 
-with k2:
-    st.metric("Period Low", f"${float(low_vals.min()):,.2f}")
+if latest_rsi < 35 and latest_macd > latest_signal:
+    signal = "BUY"
+    confidence = 75
+elif latest_rsi > 65 and latest_macd < latest_signal:
+    signal = "SELL"
+    confidence = 75
 
-with k3:
-    st.metric("Volume (Last)", f"{int(volume_vals[-1]):,}")
-
-# =============================
-# BUY / SELL SIGNAL DISPLAY
-# =============================
 st.markdown("---")
-st.subheader("📊 Trading Signal")
+st.subheader("📊 Rule-Based Trading Signal")
 
 if signal == "BUY":
-    st.success(f"🟢 BUY SIGNAL | Confidence: {confidence}%")
-
+    st.success(f"🟢 BUY | Confidence: {confidence}%")
 elif signal == "SELL":
-    st.error(f"🔴 SELL SIGNAL | Confidence: {confidence}%")
-
+    st.error(f"🔴 SELL | Confidence: {confidence}%")
 else:
     st.warning(f"🟡 HOLD | Confidence: {confidence}%")
 
 # =====================================
-# AI ANALYSIS SECTION
+# AI DECISION ENGINE
 # =====================================
-st.markdown("---")
-st.subheader("🧠 AI Financial Analyst")
-
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-user_question = st.text_input("Ask about trend, risk, entry, outlook...")
-
-def ask_ai(question):
-    latest_price = float(close_vals[-1])
-    latest_rsi = float(df["RSI"].iloc[-1])
-
+def ask_ai_decision():
     prompt = f"""
-    You are a professional financial market analyst.
+    You are a professional trading analyst.
 
-    Asset: {symbol}
-    Current Price: {latest_price}
+    Market Data:
+    Price: {current_price}
     RSI: {latest_rsi}
+    MACD: {latest_macd}
+    MACD Signal: {latest_signal}
 
-    User Question:
-    {question}
+    Respond in this format:
 
-    Provide:
-    - Technical analysis
-    - Risk assessment
-    - Short-term outlook
-    - Confidence level (%)
+    Decision: BUY or SELL or HOLD
+    Confidence: number between 0 and 100
+    Reason: short explanation
     """
 
+    response = client.responses.create(
+        model="gpt-4.1-mini",
+        input=prompt,
+        max_output_tokens=200
+    )
+
+    return response.output_text
+
+st.markdown("---")
+st.subheader("🤖 AI Decision Engine")
+
+if st.button("Generate AI Decision"):
     try:
-        response = client.responses.create(
-            model="gpt-4.1-mini",
-            input=prompt,
-            max_output_tokens=400
-        )
-        return response.output_text
+        ai_result = ask_ai_decision()
+        st.info(ai_result)
     except Exception as e:
-        return f"AI Error: {e}"
-
-if user_question:
-    reply = ask_ai(user_question)
-    st.session_state.chat_history.append(("You", user_question))
-    st.session_state.chat_history.append(("AI", reply))
-
-for speaker, message in st.session_state.chat_history:
-    if speaker == "You":
-        st.markdown(f"**🧑 You:** {message}")
-    else:
-        st.markdown(f"**🤖 AI:** {message}")
+        st.error(f"AI Error: {e}")

@@ -11,7 +11,7 @@ from openai import OpenAI
 # CONFIG
 # =====================================
 #load_dotenv()
-client = OpenAI(api_key=st.secrets("OPENAI_API_KEY"))
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 st.set_page_config(page_title="Pro AI Financial Analyst", layout="wide")
 

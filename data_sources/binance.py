@@ -1,0 +1,28 @@
+# data_sources/binance.py
+
+import ccxt
+import pandas as pd
+
+# Force SPOT market (not futures)
+exchange = ccxt.binance({
+    "options": {
+        "defaultType": "spot"
+    },
+    "enableRateLimit": True,
+    "timeout": 30000,   # 30 seconds timeout
+})
+
+def get_crypto_data(symbol="BTC/USDT", timeframe="1h", limit=200):
+
+    exchange.load_markets()   # Important for stability
+
+    ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+
+    df = pd.DataFrame(
+        ohlcv,
+        columns=['timestamp','open','high','low','close','volume']
+    )
+
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+
+    return df

@@ -133,7 +133,25 @@ macd_indicator = ta.trend.MACD(pd.Series(close_vals))
 df["MACD"] = macd_indicator.macd()
 df["MACD_SIGNAL"] = macd_indicator.macd_signal()
 df["MACD_HIST"] = macd_indicator.macd_diff()
+#====================
+# =============================
+# SIGNAL LOGIC
+# =============================
+latest_rsi = float(df["RSI"].iloc[-1])
+latest_macd = float(df["MACD"].iloc[-1])
+latest_signal = float(df["MACD_SIGNAL"].iloc[-1])
 
+signal = "HOLD"
+confidence = 50
+
+if latest_rsi < 35 and latest_macd > latest_signal:
+    signal = "BUY"
+    confidence = 75
+
+elif latest_rsi > 65 and latest_macd < latest_signal:
+    signal = "SELL"
+    confidence = 75
+#===========
 
 rsi_fig = go.Figure()
 rsi_fig.add_trace(go.Scatter(
@@ -149,6 +167,7 @@ rsi_fig.add_hline(y=30)
 rsi_fig.update_layout(template="plotly_dark", height=200)
 
 st.plotly_chart(rsi_fig, use_container_width=True)
+
 # =============================
 # MACD PANEL
 # =============================
@@ -198,6 +217,21 @@ with k2:
 
 with k3:
     st.metric("Volume (Last)", f"{int(volume_vals[-1]):,}")
+
+# =============================
+# BUY / SELL SIGNAL DISPLAY
+# =============================
+st.markdown("---")
+st.subheader("📊 Trading Signal")
+
+if signal == "BUY":
+    st.success(f"🟢 BUY SIGNAL | Confidence: {confidence}%")
+
+elif signal == "SELL":
+    st.error(f"🔴 SELL SIGNAL | Confidence: {confidence}%")
+
+else:
+    st.warning(f"🟡 HOLD | Confidence: {confidence}%")
 
 # =====================================
 # AI ANALYSIS SECTION

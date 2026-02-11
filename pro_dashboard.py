@@ -3,6 +3,7 @@ import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
 import ta
+import requests
 from openai import OpenAI
 
 # =====================================
@@ -45,7 +46,7 @@ else:
     interval = "1d"
 
 # =====================================
-# LOAD DATA
+# LOAD MARKET DATA
 # =====================================
 try:
     df = yf.download(
@@ -74,21 +75,37 @@ if "Datetime" in df.columns:
 df = df.dropna()
 
 # =====================================
-# FETCH NEWS
+# PROFESSIONAL NEWSAPI INTEGRATION
 # =====================================
-news_summary = "No recent news available."
+def fetch_news(query):
+    api_key = st.secrets["NEWS_API_KEY"]
 
-try:
-    ticker = yf.Ticker(symbol)
-    news_items = ticker.news
+    url = (
+        f"https://newsapi.org/v2/everything?"
+        f"q={query}&"
+        f"sortBy=publishedAt&"
+        f"language=en&"
+        f"pageSize=5&"
+        f"apiKey={api_key}"
+    )
 
-    if news_items:
-        news_summary = "\n".join([
-            f"- {item['title']}"
-            for item in news_items[:5]
-        ])
-except Exception:
-    pass
+    try:
+        response = requests.get(url)
+        data = response.json()
+
+        if data["status"] == "ok":
+            articles = data.get("articles", [])
+            if not articles:
+                return "No recent news found."
+            headlines = [f"- {article['title']}" for article in articles]
+            return "\n".join(headlines)
+        else:
+            return "News unavailable."
+
+    except Exception:
+        return "News fetch error."
+
+news_summary = fetch_news(symbol)
 
 # =====================================
 # NUMERIC ARRAYS
@@ -134,13 +151,7 @@ st.plotly_chart(fig, use_container_width=True)
 df["RSI"] = ta.momentum.RSIIndicator(pd.Series(close_vals)).rsi()
 
 rsi_fig = go.Figure()
-rsi_fig.add_trace(go.Scatter(
-    x=df["Date"],
-    y=df["RSI"],
-    mode="lines",
-    name="RSI"
-))
-
+rsi_fig.add_trace(go.Scatter(x=df["Date"], y=df["RSI"], mode="lines", name="RSI"))
 rsi_fig.add_hline(y=70)
 rsi_fig.add_hline(y=30)
 rsi_fig.update_layout(template="plotly_dark", height=200)
@@ -159,25 +170,15 @@ macd_fig = go.Figure()
 macd_fig.add_trace(go.Scatter(x=df["Date"], y=df["MACD"], mode="lines", name="MACD"))
 macd_fig.add_trace(go.Scatter(x=df["Date"], y=df["MACD_SIGNAL"], mode="lines", name="Signal"))
 macd_fig.add_trace(go.Bar(x=df["Date"], y=df["MACD_HIST"], name="Histogram"))
-
 macd_fig.update_layout(template="plotly_dark", height=250)
 st.plotly_chart(macd_fig, use_container_width=True)
 
 # =====================================
 # SAFE INDICATOR EXTRACTION
 # =====================================
-latest_rsi = None
-latest_macd = None
-latest_signal = None
-
-if not df["RSI"].dropna().empty:
-    latest_rsi = float(df["RSI"].dropna().iloc[-1])
-
-if not df["MACD"].dropna().empty:
-    latest_macd = float(df["MACD"].dropna().iloc[-1])
-
-if not df["MACD_SIGNAL"].dropna().empty:
-    latest_signal = float(df["MACD_SIGNAL"].dropna().iloc[-1])
+latest_rsi = float(df["RSI"].dropna().iloc[-1]) if not df["RSI"].dropna().empty else None
+latest_macd = float(df["MACD"].dropna().iloc[-1]) if not df["MACD"].dropna().empty else None
+latest_signal = float(df["MACD_SIGNAL"].dropna().iloc[-1]) if not df["MACD_SIGNAL"].dropna().empty else None
 
 # =====================================
 # RULE-BASED SIGNAL
@@ -207,7 +208,7 @@ else:
 # NEWS PANEL
 # =====================================
 st.markdown("---")
-st.subheader("📰 Recent Financial News")
+st.subheader("📰 Latest Financial News")
 st.text(news_summary)
 
 # =====================================
@@ -219,14 +220,14 @@ def ask_ai_decision():
 
     Technical Data:
     Price: {current_price}
-    RSI: {latest_rsi if latest_rsi else "Not Available"}
-    MACD: {latest_macd if latest_macd else "Not Available"}
-    MACD Signal: {latest_signal if latest_signal else "Not Available"}
+    RSI: {latest_rsi}
+    MACD: {latest_macd}
+    MACD Signal: {latest_signal}
 
     Recent News:
     {news_summary}
 
-    Based on BOTH technical indicators and news sentiment,
+    Based on both technical indicators and news sentiment,
     respond in this format:
 
     Decision: BUY or SELL or HOLD
@@ -267,6 +268,7 @@ if st.button("Ask AI"):
             Price: {current_price}
             RSI: {latest_rsi}
             MACD: {latest_macd}
+
             News:
             {news_summary}
 

@@ -74,13 +74,29 @@ if "Datetime" in df.columns:
 df = df.dropna()
 
 # =====================================
+# FETCH NEWS
+# =====================================
+news_summary = "No recent news available."
+
+try:
+    ticker = yf.Ticker(symbol)
+    news_items = ticker.news
+
+    if news_items:
+        news_summary = "\n".join([
+            f"- {item['title']}"
+            for item in news_items[:5]
+        ])
+except Exception:
+    pass
+
+# =====================================
 # NUMERIC ARRAYS
 # =====================================
 open_vals = df["Open"].values
 high_vals = df["High"].values
 low_vals = df["Low"].values
 close_vals = df["Close"].values
-volume_vals = df["Volume"].values
 
 current_price = float(close_vals[-1])
 
@@ -140,23 +156,9 @@ df["MACD_SIGNAL"] = macd_indicator.macd_signal()
 df["MACD_HIST"] = macd_indicator.macd_diff()
 
 macd_fig = go.Figure()
-macd_fig.add_trace(go.Scatter(
-    x=df["Date"],
-    y=df["MACD"],
-    mode="lines",
-    name="MACD"
-))
-macd_fig.add_trace(go.Scatter(
-    x=df["Date"],
-    y=df["MACD_SIGNAL"],
-    mode="lines",
-    name="Signal"
-))
-macd_fig.add_trace(go.Bar(
-    x=df["Date"],
-    y=df["MACD_HIST"],
-    name="Histogram"
-))
+macd_fig.add_trace(go.Scatter(x=df["Date"], y=df["MACD"], mode="lines", name="MACD"))
+macd_fig.add_trace(go.Scatter(x=df["Date"], y=df["MACD_SIGNAL"], mode="lines", name="Signal"))
+macd_fig.add_trace(go.Bar(x=df["Date"], y=df["MACD_HIST"], name="Histogram"))
 
 macd_fig.update_layout(template="plotly_dark", height=250)
 st.plotly_chart(macd_fig, use_container_width=True)
@@ -183,12 +185,10 @@ if not df["MACD_SIGNAL"].dropna().empty:
 signal = "HOLD"
 confidence = 50
 
-if latest_rsi is not None and latest_macd is not None and latest_signal is not None:
-
+if latest_rsi and latest_macd and latest_signal:
     if latest_rsi < 35 and latest_macd > latest_signal:
         signal = "BUY"
         confidence = 75
-
     elif latest_rsi > 65 and latest_macd < latest_signal:
         signal = "SELL"
         confidence = 75
@@ -204,19 +204,30 @@ else:
     st.warning(f"🟡 HOLD | Confidence: {confidence}%")
 
 # =====================================
+# NEWS PANEL
+# =====================================
+st.markdown("---")
+st.subheader("📰 Recent Financial News")
+st.text(news_summary)
+
+# =====================================
 # AI DECISION ENGINE
 # =====================================
 def ask_ai_decision():
     prompt = f"""
     You are a professional trading analyst.
 
-    Market Data:
+    Technical Data:
     Price: {current_price}
-    RSI: {latest_rsi if latest_rsi is not None else "Not Available"}
-    MACD: {latest_macd if latest_macd is not None else "Not Available"}
-    MACD Signal: {latest_signal if latest_signal is not None else "Not Available"}
+    RSI: {latest_rsi if latest_rsi else "Not Available"}
+    MACD: {latest_macd if latest_macd else "Not Available"}
+    MACD Signal: {latest_signal if latest_signal else "Not Available"}
 
-    Respond in this format:
+    Recent News:
+    {news_summary}
+
+    Based on BOTH technical indicators and news sentiment,
+    respond in this format:
 
     Decision: BUY or SELL or HOLD
     Confidence: number between 0 and 100
@@ -226,7 +237,7 @@ def ask_ai_decision():
     response = client.responses.create(
         model="gpt-4.1-mini",
         input=prompt,
-        max_output_tokens=200
+        max_output_tokens=300
     )
 
     return response.output_text
@@ -236,7 +247,42 @@ st.subheader("🤖 AI Decision Engine")
 
 if st.button("Generate AI Decision"):
     try:
-        ai_result = ask_ai_decision()
-        st.info(ai_result)
+        st.info(ask_ai_decision())
     except Exception as e:
         st.error(f"AI Error: {e}")
+
+# =====================================
+# CUSTOM AI QUERY
+# =====================================
+st.markdown("---")
+st.subheader("💬 Ask the AI Anything")
+
+user_query = st.text_input("Ask about trend, risk, outlook, strategy...")
+
+if st.button("Ask AI"):
+    if user_query.strip() != "":
+        try:
+            custom_prompt = f"""
+            Asset: {symbol}
+            Price: {current_price}
+            RSI: {latest_rsi}
+            MACD: {latest_macd}
+            News:
+            {news_summary}
+
+            User Question:
+            {user_query}
+
+            Provide professional trading analysis.
+            """
+
+            response = client.responses.create(
+                model="gpt-4.1-mini",
+                input=custom_prompt,
+                max_output_tokens=400
+            )
+
+            st.info(response.output_text)
+
+        except Exception as e:
+            st.error(f"AI Error: {e}")

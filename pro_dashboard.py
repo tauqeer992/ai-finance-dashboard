@@ -9,7 +9,6 @@ from openai import OpenAI
 # CONFIG
 # =====================================
 st.set_page_config(page_title="AI Personal Trading Tool", layout="wide")
-
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # =====================================
@@ -30,7 +29,7 @@ timeframe_option = st.sidebar.selectbox(
 )
 
 # =====================================
-# AUTO PERIOD + INTERVAL LOGIC
+# AUTO PERIOD + INTERVAL
 # =====================================
 if timeframe_option == "Intraday (1 Day)":
     period = "1d"
@@ -97,7 +96,7 @@ with col2:
     st.metric("Current Price", f"${current_price:,.2f}")
 
 # =====================================
-# CANDLESTICK CHART
+# CANDLESTICK
 # =====================================
 fig = go.Figure()
 
@@ -111,7 +110,6 @@ fig.add_trace(go.Candlestick(
 ))
 
 fig.update_layout(template="plotly_dark", height=500)
-
 st.plotly_chart(fig, use_container_width=True)
 
 # =====================================
@@ -129,9 +127,7 @@ rsi_fig.add_trace(go.Scatter(
 
 rsi_fig.add_hline(y=70)
 rsi_fig.add_hline(y=30)
-
 rsi_fig.update_layout(template="plotly_dark", height=200)
-
 st.plotly_chart(rsi_fig, use_container_width=True)
 
 # =====================================
@@ -144,21 +140,18 @@ df["MACD_SIGNAL"] = macd_indicator.macd_signal()
 df["MACD_HIST"] = macd_indicator.macd_diff()
 
 macd_fig = go.Figure()
-
 macd_fig.add_trace(go.Scatter(
     x=df["Date"],
     y=df["MACD"],
     mode="lines",
     name="MACD"
 ))
-
 macd_fig.add_trace(go.Scatter(
     x=df["Date"],
     y=df["MACD_SIGNAL"],
     mode="lines",
     name="Signal"
 ))
-
 macd_fig.add_trace(go.Bar(
     x=df["Date"],
     y=df["MACD_HIST"],
@@ -166,25 +159,39 @@ macd_fig.add_trace(go.Bar(
 ))
 
 macd_fig.update_layout(template="plotly_dark", height=250)
-
 st.plotly_chart(macd_fig, use_container_width=True)
+
+# =====================================
+# SAFE INDICATOR EXTRACTION
+# =====================================
+latest_rsi = None
+latest_macd = None
+latest_signal = None
+
+if not df["RSI"].dropna().empty:
+    latest_rsi = float(df["RSI"].dropna().iloc[-1])
+
+if not df["MACD"].dropna().empty:
+    latest_macd = float(df["MACD"].dropna().iloc[-1])
+
+if not df["MACD_SIGNAL"].dropna().empty:
+    latest_signal = float(df["MACD_SIGNAL"].dropna().iloc[-1])
 
 # =====================================
 # RULE-BASED SIGNAL
 # =====================================
-latest_rsi = float(df["RSI"].dropna().iloc[-1])
-latest_macd = float(df["MACD"].dropna().iloc[-1])
-latest_signal = float(df["MACD_SIGNAL"].dropna().iloc[-1])
-
 signal = "HOLD"
 confidence = 50
 
-if latest_rsi < 35 and latest_macd > latest_signal:
-    signal = "BUY"
-    confidence = 75
-elif latest_rsi > 65 and latest_macd < latest_signal:
-    signal = "SELL"
-    confidence = 75
+if latest_rsi is not None and latest_macd is not None and latest_signal is not None:
+
+    if latest_rsi < 35 and latest_macd > latest_signal:
+        signal = "BUY"
+        confidence = 75
+
+    elif latest_rsi > 65 and latest_macd < latest_signal:
+        signal = "SELL"
+        confidence = 75
 
 st.markdown("---")
 st.subheader("📊 Rule-Based Trading Signal")
@@ -205,9 +212,9 @@ def ask_ai_decision():
 
     Market Data:
     Price: {current_price}
-    RSI: {latest_rsi}
-    MACD: {latest_macd}
-    MACD Signal: {latest_signal}
+    RSI: {latest_rsi if latest_rsi is not None else "Not Available"}
+    MACD: {latest_macd if latest_macd is not None else "Not Available"}
+    MACD Signal: {latest_signal if latest_signal is not None else "Not Available"}
 
     Respond in this format:
 

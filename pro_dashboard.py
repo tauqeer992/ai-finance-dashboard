@@ -173,8 +173,8 @@ st.plotly_chart(macd_fig, use_container_width=True)
 # RULE-BASED SIGNAL
 # =====================================
 latest_rsi = float(df["RSI"].dropna().iloc[-1])
-latest_macd = float(df["MACD"].iloc[-1])
-latest_signal = float(df["MACD_SIGNAL"].iloc[-1])
+latest_macd = float(df["MACD"].dropna().iloc[-1])
+latest_signal = float(df["MACD_SIGNAL"].dropna().iloc[-1])
 
 signal = "HOLD"
 confidence = 50

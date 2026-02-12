@@ -74,9 +74,6 @@ if "Datetime" in df.columns:
 
 df = df.dropna()
 
-# =====================================
-# PROFESSIONAL NEWSAPI INTEGRATION
-# =====================================
 def fetch_news(query):
     api_key = st.secrets["NEWS_API_KEY"]
 
@@ -93,6 +90,8 @@ def fetch_news(query):
         response = requests.get(url)
         data = response.json()
 
+        st.write("News API response:", data)  # DEBUG
+
         if data["status"] == "ok":
             articles = data.get("articles", [])
             if not articles:
@@ -100,13 +99,10 @@ def fetch_news(query):
             headlines = [f"- {article['title']}" for article in articles]
             return "\n".join(headlines)
         else:
-            return "News unavailable."
+            return f"News API error: {data}"
 
-    except Exception:
-        return "News fetch error."
-
-news_summary = fetch_news(symbol)
-
+    except Exception as e:
+        return f"News fetch error: {e}"
 # =====================================
 # NUMERIC ARRAYS
 # =====================================

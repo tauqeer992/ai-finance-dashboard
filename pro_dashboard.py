@@ -165,32 +165,114 @@ latest_macd = df["MACD"].dropna().iloc[-1] if not df["MACD"].dropna().empty else
 latest_signal = df["MACD_SIGNAL"].dropna().iloc[-1] if not df["MACD_SIGNAL"].dropna().empty else None
 
 # =====================================================
-# RULE SIGNAL
+# NUMERIC TECHNICAL SCORING
 # =====================================================
-signal = "HOLD"
-confidence = 50
 
-if (
-    latest_rsi is not None
-    and latest_macd is not None
-    and latest_signal is not None
-):
-    if latest_rsi < 35 and latest_macd > latest_signal:
-        signal = "BUY"
-        confidence = 75
-    elif latest_rsi > 65 and latest_macd < latest_signal:
-        signal = "SELL"
-        confidence = 75
+technical_score = 50  # neutral base
 
-st.subheader("📊 Rule-Based Signal")
+if latest_rsi is not None:
+    if latest_rsi < 30:
+        technical_score += 20
+    elif latest_rsi < 40:
+        technical_score += 10
+    elif latest_rsi > 70:
+        technical_score -= 20
+    elif latest_rsi > 60:
+        technical_score -= 10
 
-if signal == "BUY":
-    st.success(f"🟢 BUY | Confidence: {confidence}%")
-elif signal == "SELL":
-    st.error(f"🔴 SELL | Confidence: {confidence}%")
+if latest_macd is not None and latest_signal is not None:
+    if latest_macd > latest_signal:
+        technical_score += 15
+    else:
+        technical_score -= 15
+
+technical_score = max(0, min(100, technical_score))
+
+
+# =====================================================
+# AI NEWS SENTIMENT → NUMERIC SCORE
+# =====================================================
+
+def get_news_sentiment_score(headlines):
+
+    if not headlines:
+        return 50, "Neutral"
+
+    prompt = f"""
+    Determine overall sentiment from these financial headlines:
+
+    {headlines}
+
+    Respond strictly in this format:
+    Sentiment: Bullish
+    """
+
+    response = client.responses.create(
+        model="gpt-4.1-mini",
+        input=prompt,
+        max_output_tokens=50
+    )
+
+    result = response.output_text.lower()
+
+    if "bullish" in result:
+        return 75, "Bullish"
+    elif "bearish" in result:
+        return 25, "Bearish"
+    else:
+        return 50, "Neutral"
+
+
+news_items = fetch_finnhub_news(symbol)
+
+if news_items:
+    headlines = [item["headline"] for item in news_items]
 else:
-    st.warning(f"🟡 HOLD | Confidence: {confidence}%")
+    headlines = []
 
+news_score, news_sentiment = get_news_sentiment_score(headlines)
+
+
+# =====================================================
+# FINAL WEIGHTED CONFIDENCE
+# =====================================================
+
+final_score = int((technical_score * 0.7) + (news_score * 0.3))
+
+if final_score > 65:
+    final_signal = "BUY"
+elif final_score < 35:
+    final_signal = "SELL"
+else:
+    final_signal = "HOLD"
+
+
+# =====================================================
+# DISPLAY RESULTS
+# =====================================================
+
+st.subheader("📊 Multi-Factor Signal Engine")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric("Technical Score", f"{technical_score}/100")
+
+with col2:
+    st.metric("News Sentiment", news_sentiment)
+
+with col3:
+    st.metric("Final Confidence", f"{final_score}%")
+
+# Progress Bar
+st.progress(final_score / 100)
+
+if final_signal == "BUY":
+    st.success(f"🟢 BUY | Weighted Confidence: {final_score}%")
+elif final_signal == "SELL":
+    st.error(f"🔴 SELL | Weighted Confidence: {final_score}%")
+else:
+    st.warning(f"🟡 HOLD | Weighted Confidence: {final_score}%")
 # =====================================================
 # NEWS PANEL
 # =====================================================

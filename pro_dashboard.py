@@ -253,7 +253,8 @@ def get_news_sentiment_score(headlines):
 news_items = fetch_finnhub_news(symbol)
 
 if news_items:
-    headlines = [item["headline"] for item in news_items]
+    headlines, news_source = fetch_news(symbol)
+
 else:
     headlines = []
 

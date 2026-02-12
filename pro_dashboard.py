@@ -25,7 +25,8 @@ symbol = st.sidebar.text_input("Asset Symbol (e.g. NVDA, BTC-USD)", "BTC-USD")
 timeframe_option = st.sidebar.selectbox(
     "Timeframe",
     [
-        "7 Day (Intraday)",
+        "1 Day (Intraday)",
+        "1 Week",
         "1 Month",
         "3 Months",
         "1 Year",
@@ -78,9 +79,12 @@ def load_data(symbol, timeframe):
         return None
 
     # Yahoo for stocks + normal timeframes
-    if timeframe == "7 Day (Intraday)":
-        period = "7d"
+    if timeframe == "1 Day (Intraday)":
+        period = "1d"
         interval = "60m"
+    elif timeframe == "1 Week":
+        period = "7d"
+        interval = "1h"
     elif timeframe == "1 Month":
         period = "1mo"
         interval = "1h"

@@ -5,5 +5,4 @@ pandas
 ta
 openai
 requests
-ccxt
 feedparser

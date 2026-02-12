@@ -4,9 +4,10 @@ import plotly.graph_objects as go
 import pandas as pd
 import ta
 import requests
-import feedparser
+import ccxt
 from openai import OpenAI
 from datetime import datetime, timedelta
+import feedparser
 
 # =====================================================
 # CONFIG
@@ -29,20 +30,62 @@ timeframe_option = st.sidebar.selectbox(
         "1 Month",
         "3 Months",
         "1 Year",
+       # "1 Week (4H - Crypto)"
     ]
 )
 
 # =====================================================
-# DATA LOADER (Yahoo Only)
+# DATA LOADER (Stocks + Multi-Exchange Crypto)
 # =====================================================
 def load_data(symbol, timeframe):
 
+    # 4H Crypto Mode
+    if timeframe == "1 Week (4H - Crypto)":
+
+        exchanges = [
+            ccxt.binance(),
+            ccxt.coinbase(),
+            ccxt.bybit(),
+            ccxt.kraken()
+        ]
+
+        since = int((datetime.utcnow() - timedelta(days=7)).timestamp() * 1000)
+
+        pair_usdt = symbol.replace("-USD", "/USDT")
+        pair_usd = symbol.replace("-USD", "/USD")
+
+        for exchange in exchanges:
+            try:
+                if exchange.id in ["coinbase", "kraken"]:
+                    pair = pair_usd
+                else:
+                    pair = pair_usdt
+
+                ohlcv = exchange.fetch_ohlcv(pair, timeframe='1h', since=since)
+
+                if ohlcv:
+                    df = pd.DataFrame(
+                        ohlcv,
+                        columns=["timestamp", "Open", "High", "Low", "Close", "Volume"]
+                    )
+                    df["Date"] = pd.to_datetime(df["timestamp"], unit='ms')
+                    st.sidebar.success(f"Exchange: {exchange.id}")
+                    return df
+
+            except Exception:
+                continue
+
+        st.error("All exchanges failed for 4H crypto data.")
+        return None 
+
+    
+    # Yahoo for stocks + normal timeframes
     if timeframe == "1 Day (Intraday)":
-        period = "7d"        # fetch more data for indicators
-        interval = "1h"
+        period = "1d"
+        interval = "60m"
     elif timeframe == "1 Week":
         period = "7d"
-        interval = "1h"
+        interval = "4h"
     elif timeframe == "1 Month":
         period = "1mo"
         interval = "1h"
@@ -110,6 +153,7 @@ def fetch_news(symbol):
     if headlines:
         return "\n".join([f"- {h}" for h in headlines])
 
+    # fallback
     rss_headlines = fetch_rss_news(symbol)
 
     if rss_headlines:
@@ -156,7 +200,6 @@ st.plotly_chart(fig, use_container_width=True)
 # =====================================================
 df["RSI"] = ta.momentum.RSIIndicator(close_vals).rsi()
 macd_indicator = ta.trend.MACD(close_vals)
-
 df["MACD"] = macd_indicator.macd()
 df["MACD_SIGNAL"] = macd_indicator.macd_signal()
 
@@ -170,11 +213,7 @@ latest_signal = df["MACD_SIGNAL"].dropna().iloc[-1] if not df["MACD_SIGNAL"].dro
 signal = "HOLD"
 confidence = 50
 
-if (
-    latest_rsi is not None
-    and latest_macd is not None
-    and latest_signal is not None
-):
+if latest_rsi and latest_macd and latest_signal:
     if latest_rsi < 35 and latest_macd > latest_signal:
         signal = "BUY"
         confidence = 75

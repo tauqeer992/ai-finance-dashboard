@@ -45,7 +45,7 @@ def load_data(symbol, timeframe):
         interval = "4h"
     elif timeframe == "1 Month":
         period = "1mo"
-        interval = "6h"
+        interval = "12h"
     elif timeframe == "3 Months":
         period = "3mo"
         interval = "1d"

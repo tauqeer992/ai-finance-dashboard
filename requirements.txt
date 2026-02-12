@@ -6,3 +6,4 @@ ta
 openai
 requests
 ccxt
+feedparser

@@ -4,7 +4,6 @@ import plotly.graph_objects as go
 import pandas as pd
 import ta
 import requests
-import ccxt
 from openai import OpenAI
 from datetime import datetime, timedelta
 
@@ -19,98 +18,28 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 # =====================================
 st.sidebar.title("📊 AI Personal Trading Tool")
 
-symbol = st.sidebar.text_input("Asset Symbol (e.g. NVDA, BTC-USD)", "BTC-USD")
+symbol = st.sidebar.text_input("Asset Symbol (e.g. NVDA, BTC-USD)", "NVDA")
 
 timeframe_option = st.sidebar.selectbox(
     "Timeframe",
-    [
-        "1 Day (Intraday)",
-        "1 Month",
-        "3 Months",
-        "1 Year",
-        "1 Week (4H - Crypto)"
-    ]
+    ["1 Day (Intraday)", "1 Month", "3 Months", "1 Year"]
 )
 
-# =====================================
-# DATA LOADING FUNCTION
-# =====================================
-def load_data(symbol, timeframe):
-
-    # Detect crypto
-    is_crypto = "USD" in symbol or "-" in symbol
-
-    if timeframe == "1 Week (4H - Crypto)":
-
-        if not is_crypto:
-            st.warning("4H timeframe only supported for crypto.")
-            return None
-
-        try:
-            exchange = ccxt.binance()
-            since = exchange.parse8601(
-                (datetime.utcnow() - timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%S')
-            )
-
-            # Convert BTC-USD -> BTC/USDT for Binance
-            pair = symbol.replace("-USD", "/USDT")
-
-            ohlcv = exchange.fetch_ohlcv(pair, timeframe='4h', since=since)
-
-            df = pd.DataFrame(
-                ohlcv,
-                columns=["timestamp", "Open", "High", "Low", "Close", "Volume"]
-            )
-
-            df["Date"] = pd.to_datetime(df["timestamp"], unit='ms')
-            return df
-
-        except Exception as e:
-            st.error(f"Binance error: {e}")
-            return None
-
-    # ===============================
-    # Yahoo Data (Stocks + Normal)
-    # ===============================
-    if timeframe == "1 Day (Intraday)":
-        period = "1d"
-        interval = "60m"
-    elif timeframe == "1 Month":
-        period = "1mo"
-        interval = "1h"
-    elif timeframe == "3 Months":
-        period = "3mo"
-        interval = "1d"
-    else:
-        period = "1y"
-        interval = "1d"
-
-    df = yf.download(symbol, period=period, interval=interval, progress=False)
-
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    df = df.reset_index()
-
-    if "Datetime" in df.columns:
-        df.rename(columns={"Datetime": "Date"}, inplace=True)
-
-    return df
-
+if timeframe_option == "1 Day (Intraday)":
+    period = "1d"
+    interval = "60m"
+elif timeframe_option == "1 Month":
+    period = "1mo"
+    interval = "1h"
+elif timeframe_option == "3 Months":
+    period = "3mo"
+    interval = "1d"
+else:
+    period = "1y"
+    interval = "1d"
 
 # =====================================
-# LOAD DATA
-# =====================================
-df = load_data(symbol, timeframe_option)
-
-if df is None or df.empty:
-    st.stop()
-
-close_vals = df["Close"]
-current_price = float(close_vals.iloc[-1])
-
-# =====================================
-# NEWS (Finnhub)
+# NEWS FUNCTION (Finnhub - Cloud Safe)
 # =====================================
 def fetch_news(symbol):
     try:
@@ -131,13 +60,37 @@ def fetch_news(symbol):
         data = response.json()
 
         if isinstance(data, list) and len(data) > 0:
-            return "\n".join([f"- {item['headline']}" for item in data[:5]])
+            headlines = [f"- {item['headline']}" for item in data[:5]]
+            return "\n".join(headlines)
         else:
             return "No recent news found."
 
     except Exception:
         return "News unavailable."
 
+# =====================================
+# LOAD MARKET DATA
+# =====================================
+df = yf.download(symbol, period=period, interval=interval, progress=False)
+
+if df.empty:
+    st.error("No market data available.")
+    st.stop()
+
+if isinstance(df.columns, pd.MultiIndex):
+    df.columns = df.columns.get_level_values(0)
+
+df = df.reset_index()
+
+if "Datetime" in df.columns:
+    df.rename(columns={"Datetime": "Date"}, inplace=True)
+
+close_vals = df["Close"]
+current_price = float(close_vals.iloc[-1])
+
+# =====================================
+# FETCH NEWS
+# =====================================
 news_summary = fetch_news(symbol)
 
 # =====================================
@@ -158,20 +111,23 @@ fig.update_layout(template="plotly_dark", height=500)
 st.plotly_chart(fig, use_container_width=True)
 
 # =====================================
-# RSI + MACD
+# RSI
 # =====================================
 df["RSI"] = ta.momentum.RSIIndicator(close_vals).rsi()
-macd_indicator = ta.trend.MACD(close_vals)
+latest_rsi = df["RSI"].dropna().iloc[-1] if not df["RSI"].dropna().empty else None
 
+# =====================================
+# MACD
+# =====================================
+macd_indicator = ta.trend.MACD(close_vals)
 df["MACD"] = macd_indicator.macd()
 df["MACD_SIGNAL"] = macd_indicator.macd_signal()
 
-latest_rsi = df["RSI"].dropna().iloc[-1] if not df["RSI"].dropna().empty else None
 latest_macd = df["MACD"].dropna().iloc[-1] if not df["MACD"].dropna().empty else None
 latest_signal = df["MACD_SIGNAL"].dropna().iloc[-1] if not df["MACD_SIGNAL"].dropna().empty else None
 
 # =====================================
-# RULE SIGNAL
+# RULE-BASED SIGNAL
 # =====================================
 signal = "HOLD"
 confidence = 50
@@ -194,17 +150,25 @@ else:
     st.warning(f"🟡 HOLD | Confidence: {confidence}%")
 
 # =====================================
-# AI DECISION
+# NEWS PANEL
+# =====================================
+st.subheader("📰 Latest Financial News")
+st.text(news_summary)
+
+# =====================================
+# AI DECISION ENGINE
 # =====================================
 def ask_ai_decision():
     prompt = f"""
+    You are a professional trading analyst.
+
     Technical Data:
     Price: {current_price}
     RSI: {latest_rsi}
     MACD: {latest_macd}
     MACD Signal: {latest_signal}
 
-    News:
+    Recent News:
     {news_summary}
 
     Provide:
@@ -221,23 +185,39 @@ def ask_ai_decision():
 
     return response.output_text
 
-st.subheader("🤖 AI Decision")
+st.subheader("🤖 AI Decision Engine")
 
 if st.button("Generate AI Decision"):
     st.info(ask_ai_decision())
 
 # =====================================
-# CUSTOM QUERY
+# CUSTOM AI QUERY
 # =====================================
 st.subheader("💬 Ask the AI")
 
-user_query = st.text_input("Ask about trend, risk, outlook...")
+user_query = st.text_input("Ask about trend, risk, outlook, macro impact...")
 
 if st.button("Ask AI"):
     if user_query:
+        prompt = f"""
+        Asset: {symbol}
+        Price: {current_price}
+        RSI: {latest_rsi}
+        MACD: {latest_macd}
+
+        News:
+        {news_summary}
+
+        User Question:
+        {user_query}
+
+        Provide professional trading analysis.
+        """
+
         response = client.responses.create(
             model="gpt-4.1-mini",
-            input=user_query,
+            input=prompt,
             max_output_tokens=400
         )
+
         st.info(response.output_text)

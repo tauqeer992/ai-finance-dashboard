@@ -1,0 +1,3 @@
+git add .
+git commit -m "Restored full AI engine with Finnhub news"
+git push

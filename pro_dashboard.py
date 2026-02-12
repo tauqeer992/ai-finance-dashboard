@@ -38,7 +38,7 @@ timeframe_option = st.sidebar.selectbox(
 # DATA LOADER (Stocks + Multi-Exchange Crypto)
 # =====================================================
 def load_data(symbol, timeframe):
-"""
+'''
     # 4H Crypto Mode
     if timeframe == "1 Week (4H - Crypto)":
 
@@ -76,8 +76,9 @@ def load_data(symbol, timeframe):
                 continue
 
         st.error("All exchanges failed for 4H crypto data.")
-        return None """
+        return None 
 
+    '''
     # Yahoo for stocks + normal timeframes
     if timeframe == "1 Day (Intraday)":
         period = "1d"

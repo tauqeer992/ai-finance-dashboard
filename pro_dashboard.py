@@ -5,6 +5,7 @@ import pandas as pd
 import ta
 import requests
 from openai import OpenAI
+from datetime import datetime, timedelta
 
 # =====================================
 # CONFIG
@@ -13,7 +14,7 @@ st.set_page_config(page_title="AI Personal Trading Tool", layout="wide")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # =====================================
-# SIDEBAR (DEFINE SYMBOL FIRST)
+# SIDEBAR
 # =====================================
 st.sidebar.title("📊 AI Personal Trading Tool")
 
@@ -38,29 +39,34 @@ else:
     interval = "1d"
 
 # =====================================
-# NEWS FUNCTION (DEFINE BEFORE USING)
+# NEWS FUNCTION (Finnhub - Cloud Safe)
 # =====================================
 def fetch_news(symbol):
     try:
         api_key = st.secrets["FINNHUB_API_KEY"]
 
-        url = f"https://finnhub.io/api/v1/company-news?symbol={symbol}&from=2024-01-01&to=2026-12-31&token={api_key}"
+        today = datetime.today()
+        past = today - timedelta(days=7)
+
+        url = (
+            f"https://finnhub.io/api/v1/company-news?"
+            f"symbol={symbol}&"
+            f"from={past.strftime('%Y-%m-%d')}&"
+            f"to={today.strftime('%Y-%m-%d')}&"
+            f"token={api_key}"
+        )
 
         response = requests.get(url)
         data = response.json()
 
         if isinstance(data, list) and len(data) > 0:
-            headlines = [f"- {article['headline']}" for article in data[:5]]
+            headlines = [f"- {item['headline']}" for item in data[:5]]
             return "\n".join(headlines)
         else:
             return "No recent news found."
 
-    except Exception as e:
-        return f"News fetch error: {e}"
-
-
-# NOW SAFE TO CALL
-news_summary = fetch_news(symbol)
+    except Exception:
+        return "News unavailable."
 
 # =====================================
 # LOAD MARKET DATA
@@ -81,6 +87,11 @@ if "Datetime" in df.columns:
 
 close_vals = df["Close"]
 current_price = float(close_vals.iloc[-1])
+
+# =====================================
+# FETCH NEWS
+# =====================================
+news_summary = fetch_news(symbol)
 
 # =====================================
 # CHART
@@ -105,13 +116,6 @@ st.plotly_chart(fig, use_container_width=True)
 df["RSI"] = ta.momentum.RSIIndicator(close_vals).rsi()
 latest_rsi = df["RSI"].dropna().iloc[-1] if not df["RSI"].dropna().empty else None
 
-rsi_fig = go.Figure()
-rsi_fig.add_trace(go.Scatter(x=df["Date"], y=df["RSI"], mode="lines"))
-rsi_fig.add_hline(y=70)
-rsi_fig.add_hline(y=30)
-rsi_fig.update_layout(template="plotly_dark", height=200)
-st.plotly_chart(rsi_fig, use_container_width=True)
-
 # =====================================
 # MACD
 # =====================================
@@ -122,14 +126,8 @@ df["MACD_SIGNAL"] = macd_indicator.macd_signal()
 latest_macd = df["MACD"].dropna().iloc[-1] if not df["MACD"].dropna().empty else None
 latest_signal = df["MACD_SIGNAL"].dropna().iloc[-1] if not df["MACD_SIGNAL"].dropna().empty else None
 
-macd_fig = go.Figure()
-macd_fig.add_trace(go.Scatter(x=df["Date"], y=df["MACD"], mode="lines"))
-macd_fig.add_trace(go.Scatter(x=df["Date"], y=df["MACD_SIGNAL"], mode="lines"))
-macd_fig.update_layout(template="plotly_dark", height=250)
-st.plotly_chart(macd_fig, use_container_width=True)
-
 # =====================================
-# SIGNAL
+# RULE-BASED SIGNAL
 # =====================================
 signal = "HOLD"
 confidence = 50
@@ -156,3 +154,70 @@ else:
 # =====================================
 st.subheader("📰 Latest Financial News")
 st.text(news_summary)
+
+# =====================================
+# AI DECISION ENGINE
+# =====================================
+def ask_ai_decision():
+    prompt = f"""
+    You are a professional trading analyst.
+
+    Technical Data:
+    Price: {current_price}
+    RSI: {latest_rsi}
+    MACD: {latest_macd}
+    MACD Signal: {latest_signal}
+
+    Recent News:
+    {news_summary}
+
+    Provide:
+    Decision: BUY or SELL or HOLD
+    Confidence: 0-100
+    Reason: short explanation
+    """
+
+    response = client.responses.create(
+        model="gpt-4.1-mini",
+        input=prompt,
+        max_output_tokens=300
+    )
+
+    return response.output_text
+
+st.subheader("🤖 AI Decision Engine")
+
+if st.button("Generate AI Decision"):
+    st.info(ask_ai_decision())
+
+# =====================================
+# CUSTOM AI QUERY
+# =====================================
+st.subheader("💬 Ask the AI")
+
+user_query = st.text_input("Ask about trend, risk, outlook, macro impact...")
+
+if st.button("Ask AI"):
+    if user_query:
+        prompt = f"""
+        Asset: {symbol}
+        Price: {current_price}
+        RSI: {latest_rsi}
+        MACD: {latest_macd}
+
+        News:
+        {news_summary}
+
+        User Question:
+        {user_query}
+
+        Provide professional trading analysis.
+        """
+
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=prompt,
+            max_output_tokens=400
+        )
+
+        st.info(response.output_text)

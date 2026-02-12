@@ -67,9 +67,14 @@ def load_data(symbol, timeframe):
 
 
 # =====================================================
-# NEWS: FINNHUB + RSS FALLBACK
+# NEWS SYSTEM (Normalized & Safe)
 # =====================================================
+
 def fetch_finnhub_news(symbol):
+    """
+    Always returns a list of headline strings.
+    Never returns None.
+    """
     try:
         api_key = st.secrets["FINNHUB_API_KEY"]
         today = datetime.today()
@@ -83,39 +88,61 @@ def fetch_finnhub_news(symbol):
             f"token={api_key}"
         )
 
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         data = response.json()
 
         if isinstance(data, list) and len(data) > 0:
-            return [item["headline"] for item in data[:5]]
+            return [
+                item.get("headline", "")
+                for item in data[:5]
+                if item.get("headline")
+            ]
 
     except Exception:
         pass
 
-    return None
+    return []  # always return list
 
 
 def fetch_rss_news(symbol):
+    """
+    RSS fallback.
+    Always returns list of headline strings.
+    """
     try:
         rss_url = f"https://news.google.com/rss/search?q={symbol}"
         feed = feedparser.parse(rss_url)
-        return [entry.title for entry in feed.entries[:5]]
+
+        return [
+            entry.title
+            for entry in feed.entries[:5]
+            if entry.title
+        ]
+
     except Exception:
         return []
 
 
 def fetch_news(symbol):
+    """
+    Master news fetcher.
+    Returns:
+        headlines (list of strings)
+        source (string)
+    """
+
+    # 1️⃣ Try Finnhub
     headlines = fetch_finnhub_news(symbol)
-
     if headlines:
-        return "\n".join([f"- {h}" for h in headlines])
+        return headlines, "Finnhub"
 
-    rss_headlines = fetch_rss_news(symbol)
+    # 2️⃣ Fallback RSS
+    headlines = fetch_rss_news(symbol)
+    if headlines:
+        return headlines, "Google RSS"
 
-    if rss_headlines:
-        return "\n".join([f"- {h}" for h in rss_headlines])
-
-    return "No recent news available."
+    # 3️⃣ Nothing found
+    return [], "None"
 
 
 # =====================================================

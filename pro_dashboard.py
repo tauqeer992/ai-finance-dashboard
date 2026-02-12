@@ -7,16 +7,17 @@ import requests
 import ccxt
 from openai import OpenAI
 from datetime import datetime, timedelta
+import feedparser
 
-# =====================================
+# =====================================================
 # CONFIG
-# =====================================
-st.set_page_config(page_title="AI Personal Trading Tool", layout="wide")
+# =====================================================
+st.set_page_config(page_title="AI Finance Dashboard", layout="wide")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# =====================================
+# =====================================================
 # SIDEBAR
-# =====================================
+# =====================================================
 st.sidebar.title("📊 AI Personal Trading Tool")
 
 symbol = st.sidebar.text_input("Asset Symbol (e.g. NVDA, BTC-USD)", "BTC-USD")
@@ -32,46 +33,51 @@ timeframe_option = st.sidebar.selectbox(
     ]
 )
 
-# =====================================
-# DATA LOADING FUNCTION
-# =====================================
+# =====================================================
+# DATA LOADER (Stocks + Multi-Exchange Crypto)
+# =====================================================
 def load_data(symbol, timeframe):
 
-    # Detect crypto
-    is_crypto = "USD" in symbol or "-" in symbol
-
+    # 4H Crypto Mode
     if timeframe == "1 Week (4H - Crypto)":
 
-        if not is_crypto:
-            st.warning("4H timeframe only supported for crypto.")
-            return None
+        exchanges = [
+            ccxt.binance(),
+            ccxt.coinbase(),
+            ccxt.bybit(),
+            ccxt.kraken()
+        ]
 
-        try:
-            exchange = ccxt.binance()
-            since = exchange.parse8601(
-                (datetime.utcnow() - timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%S')
-            )
+        since = int((datetime.utcnow() - timedelta(days=7)).timestamp() * 1000)
 
-            # Convert BTC-USD -> BTC/USDT for Binance
-            pair = symbol.replace("-USD", "/USDT")
+        pair_usdt = symbol.replace("-USD", "/USDT")
+        pair_usd = symbol.replace("-USD", "/USD")
 
-            ohlcv = exchange.fetch_ohlcv(pair, timeframe='4h', since=since)
+        for exchange in exchanges:
+            try:
+                if exchange.id in ["coinbase", "kraken"]:
+                    pair = pair_usd
+                else:
+                    pair = pair_usdt
 
-            df = pd.DataFrame(
-                ohlcv,
-                columns=["timestamp", "Open", "High", "Low", "Close", "Volume"]
-            )
+                ohlcv = exchange.fetch_ohlcv(pair, timeframe='4h', since=since)
 
-            df["Date"] = pd.to_datetime(df["timestamp"], unit='ms')
-            return df
+                if ohlcv:
+                    df = pd.DataFrame(
+                        ohlcv,
+                        columns=["timestamp", "Open", "High", "Low", "Close", "Volume"]
+                    )
+                    df["Date"] = pd.to_datetime(df["timestamp"], unit='ms')
+                    st.sidebar.success(f"Exchange: {exchange.id}")
+                    return df
 
-        except Exception as e:
-            st.error(f"Binance error: {e}")
-            return None
+            except Exception:
+                continue
 
-    # ===============================
-    # Yahoo Data (Stocks + Normal)
-    # ===============================
+        st.error("All exchanges failed for 4H crypto data.")
+        return None
+
+    # Yahoo for stocks + normal timeframes
     if timeframe == "1 Day (Intraday)":
         period = "1d"
         interval = "60m"
@@ -98,24 +104,12 @@ def load_data(symbol, timeframe):
     return df
 
 
-# =====================================
-# LOAD DATA
-# =====================================
-df = load_data(symbol, timeframe_option)
-
-if df is None or df.empty:
-    st.stop()
-
-close_vals = df["Close"]
-current_price = float(close_vals.iloc[-1])
-
-# =====================================
-# NEWS (Finnhub)
-# =====================================
-def fetch_news(symbol):
+# =====================================================
+# NEWS: FINNHUB + RSS FALLBACK
+# =====================================================
+def fetch_finnhub_news(symbol):
     try:
         api_key = st.secrets["FINNHUB_API_KEY"]
-
         today = datetime.today()
         past = today - timedelta(days=7)
 
@@ -131,18 +125,57 @@ def fetch_news(symbol):
         data = response.json()
 
         if isinstance(data, list) and len(data) > 0:
-            return "\n".join([f"- {item['headline']}" for item in data[:5]])
-        else:
-            return "No recent news found."
+            return [item["headline"] for item in data[:5]]
 
     except Exception:
-        return "News unavailable."
+        pass
 
+    return None
+
+
+def fetch_rss_news(symbol):
+    try:
+        rss_url = f"https://news.google.com/rss/search?q={symbol}"
+        feed = feedparser.parse(rss_url)
+        return [entry.title for entry in feed.entries[:5]]
+    except Exception:
+        return []
+
+
+def fetch_news(symbol):
+    headlines = fetch_finnhub_news(symbol)
+
+    if headlines:
+        return "\n".join([f"- {h}" for h in headlines])
+
+    # fallback
+    rss_headlines = fetch_rss_news(symbol)
+
+    if rss_headlines:
+        return "\n".join([f"- {h}" for h in rss_headlines])
+
+    return "No recent news available."
+
+
+# =====================================================
+# LOAD DATA
+# =====================================================
+df = load_data(symbol, timeframe_option)
+
+if df is None or df.empty:
+    st.stop()
+
+close_vals = df["Close"]
+current_price = float(close_vals.iloc[-1])
+
+# =====================================================
+# FETCH NEWS
+# =====================================================
 news_summary = fetch_news(symbol)
 
-# =====================================
+# =====================================================
 # CHART
-# =====================================
+# =====================================================
 st.title(f"📈 {symbol} Market Overview")
 st.metric("Current Price", f"${current_price:,.2f}")
 
@@ -157,12 +190,11 @@ fig.add_trace(go.Candlestick(
 fig.update_layout(template="plotly_dark", height=500)
 st.plotly_chart(fig, use_container_width=True)
 
-# =====================================
-# RSI + MACD
-# =====================================
+# =====================================================
+# INDICATORS
+# =====================================================
 df["RSI"] = ta.momentum.RSIIndicator(close_vals).rsi()
 macd_indicator = ta.trend.MACD(close_vals)
-
 df["MACD"] = macd_indicator.macd()
 df["MACD_SIGNAL"] = macd_indicator.macd_signal()
 
@@ -170,9 +202,9 @@ latest_rsi = df["RSI"].dropna().iloc[-1] if not df["RSI"].dropna().empty else No
 latest_macd = df["MACD"].dropna().iloc[-1] if not df["MACD"].dropna().empty else None
 latest_signal = df["MACD_SIGNAL"].dropna().iloc[-1] if not df["MACD_SIGNAL"].dropna().empty else None
 
-# =====================================
+# =====================================================
 # RULE SIGNAL
-# =====================================
+# =====================================================
 signal = "HOLD"
 confidence = 50
 
@@ -193,18 +225,26 @@ elif signal == "SELL":
 else:
     st.warning(f"🟡 HOLD | Confidence: {confidence}%")
 
-# =====================================
-# AI DECISION
-# =====================================
+# =====================================================
+# NEWS PANEL
+# =====================================================
+st.subheader("📰 Latest Financial News")
+st.text(news_summary)
+
+# =====================================================
+# AI DECISION ENGINE
+# =====================================================
 def ask_ai_decision():
     prompt = f"""
+    You are a professional trading analyst.
+
     Technical Data:
     Price: {current_price}
     RSI: {latest_rsi}
     MACD: {latest_macd}
     MACD Signal: {latest_signal}
 
-    News:
+    Recent News:
     {news_summary}
 
     Provide:
@@ -221,23 +261,40 @@ def ask_ai_decision():
 
     return response.output_text
 
-st.subheader("🤖 AI Decision")
+
+st.subheader("🤖 AI Decision Engine")
 
 if st.button("Generate AI Decision"):
     st.info(ask_ai_decision())
 
-# =====================================
-# CUSTOM QUERY
-# =====================================
+# =====================================================
+# CUSTOM AI QUERY
+# =====================================================
 st.subheader("💬 Ask the AI")
 
-user_query = st.text_input("Ask about trend, risk, outlook...")
+user_query = st.text_input("Ask about trend, macro outlook, ETF impact...")
 
 if st.button("Ask AI"):
     if user_query:
+        prompt = f"""
+        Asset: {symbol}
+        Price: {current_price}
+        RSI: {latest_rsi}
+        MACD: {latest_macd}
+
+        News:
+        {news_summary}
+
+        User Question:
+        {user_query}
+
+        Provide professional trading analysis.
+        """
+
         response = client.responses.create(
             model="gpt-4.1-mini",
-            input=user_query,
+            input=prompt,
             max_output_tokens=400
         )
+
         st.info(response.output_text)

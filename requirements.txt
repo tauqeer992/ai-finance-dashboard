@@ -4,4 +4,5 @@ plotly
 pandas
 ta
 openai
-python-dotenv
+requests
+ccxt

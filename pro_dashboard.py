@@ -40,25 +40,24 @@ else:
 # =====================================
 # NEWS FUNCTION (DEFINE BEFORE USING)
 # =====================================
-def fetch_news(query):
+def fetch_news(symbol):
     try:
-        api_key = st.secrets["NEWS_API_KEY"]
-        url = (
-            f"https://newsapi.org/v2/everything?"
-            f"q={query}&sortBy=publishedAt&language=en&pageSize=5&apiKey={api_key}"
-        )
+        api_key = st.secrets["FINNHUB_API_KEY"]
+
+        url = f"https://finnhub.io/api/v1/company-news?symbol={symbol}&from=2024-01-01&to=2026-12-31&token={api_key}"
+
         response = requests.get(url)
         data = response.json()
 
-        if data.get("status") == "ok":
-            articles = data.get("articles", [])
-            if not articles:
-                return "No recent news found."
-            return "\n".join([f"- {a['title']}" for a in articles])
+        if isinstance(data, list) and len(data) > 0:
+            headlines = [f"- {article['headline']}" for article in data[:5]]
+            return "\n".join(headlines)
         else:
-            return "News unavailable."
-    except Exception:
-        return "News fetch error."
+            return "No recent news found."
+
+    except Exception as e:
+        return f"News fetch error: {e}"
+
 
 # NOW SAFE TO CALL
 news_summary = fetch_news(symbol)
